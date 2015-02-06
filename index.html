@@ -1,0 +1,269 @@
+<!DOCTYPE HTML>
+<html>
+ <head>
+<title></title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+<script src="scripts/georadius.js"></script>
+<script type="text/javascript" charset="utf-8" src="cordova.js"></script>
+<script type="text/javascript" src="http://maps.googleapis.com/maps/api/js?sensor=false"></script>
+
+<script type="text/javascript">
+	document.addEventListener("deviceready", init, false);
+
+	var FACILITES_FILE;			// The file that stores the facilites data.
+	var UPDATE_NOW = 60;		// Days until next db update.
+	var FACILITIES_DATA = "";	// Holds the data consumed from the web service.
+	var geocoder;
+
+	function init() {
+		console.log("App Started...Now safe to use device APIs...");
+
+		// Check if localStorage is supported
+		if(typeof(Storage) !== "undefined") {
+
+			if (localStorage.lastUpdated) {
+				//User has visited page before.
+				//Check to see how much time has passed since last update.
+				//Update facilities data on the file system if needed
+
+				//Set the two dates
+				var updated  = new Date(localStorage.lastUpdated);
+				var today= new Date();
+				//updated.setDate(updated.getDate() - 61); // for testing. set the date above/below UPDATE_NOW
+				//console.log(updated);
+				//console.log('Days since the last update: ' + Date.dateDiff('d', updated, today));
+
+				if(Date.dateDiff('d', updated, today) > UPDATE_NOW) {
+					//Update db
+					console.log("localStorage.lastUpdated found but database is out of date. Updating database...");
+					GetFacilites();
+				} else {
+					//Read db
+					console.log("localStorage.lastUpdated found and current. Reading database...");
+					ShowFacilities();
+					//window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, gotFS, fail);
+				}
+			} else {
+				//Update/create db
+				console.log("localStorage.lastUpdated was NOT found. Creating database...");
+				GetFacilites();
+			}
+
+		} else {
+			//ugh
+			console.log("No Web Storage support..");
+		}
+
+	}
+
+	function ShowFacilities() {
+		//read db and display results.. to be done
+		console.log("ShowFacilities called...");
+		var results = null;
+
+		displayResults(results);
+	}
+
+	function displayResults(results) {
+		// the final list displayed
+	}
+
+	function readFailed(e) {
+		console.log("FileSystem Error");
+		console.dir(e);
+	}
+
+	function gotFile(fileEntry) {
+
+		fileEntry.file(function(file) {
+			var reader = new FileReader();
+
+			reader.onloadend = function(e) {
+				console.log("Text is: "+this.result);
+				//document.querySelector("#textArea").innerHTML = this.result;
+			}
+
+			reader.readAsText(file);
+		});
+
+	}
+
+	 function onResolveSuccess(fileEntry) {
+         console.log(fileEntry.name);
+     }
+
+	function GetFacilites() {
+		$.ajax({
+			type: "GET", // Can be changed to POST but will fail with no message if dataType=jsonp
+			url: "http://www.va.gov/webservices/fandl/facilities.cfc",
+			// There are many more Region Ids. need to have them ALL (Reg_id: comma delimited list). Check http://www.va.gov/webservices/fandl/documentation/fandl.cfm for the region lookup.
+			// facility type (Fac_Type_ID: comma delimited list) 2,7,10,11 for Hospitals and clinics. Check http://www.va.gov/webservices/fandl/documentation/fandl.cfm for other types
+			data: {license:"ACE6A9C6-B1E0-D397-F8679FCC12C136DB", method:"Facility_byRegionIDandType_detail_array", ReturnFormat:"json", Reg_id:"1,2,3,4,5,6,7,8,9,10,11,12", Fac_Type_ID:"2,7,10, 11"},
+			contentType: "application/text; charset=utf-8", // prefered josn but return is malformed. swiching to json will result in a "success" but the operation will fail
+			dataType: "text", // jsonp will be successfull but parse will fail
+			success: OnGetFacilitesSuccess,
+			error: OnGetFacilitesError
+		});
+
+	}
+
+	function OnGetFacilitesSuccess(data, status) {
+		//console.log(data)
+
+		//Update lastUpated in localStorage
+		localStorage.lastUpdated = new Date();
+
+		// fix malformed json data
+		FACILITIES_DATA = jQuery.parseJSON(data.substring(2));
+		//console.log(FACILITIES_DATA);
+		//console.log(displayPropertyNames(FACILITIES_DATA)); //show me
+
+		// need to store to local file
+		window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, gotFS, fail);
+	}
+
+	function OnGetFacilitesError(request, status, error) {
+		//jQuery code will go here...
+		console.log(error+" " + request.status)
+	}
+
+    function gotFS(fileSystem) {
+    	// Erik
+        fileSystem.root.getFile("facilties.txt", {create: true, exclusive: false}, gotFileEntry, writeFailed);
+    }
+
+    function gotFileEntry(fileEntry) {
+        fileEntry.createWriter(gotFileWriter, writeFailed);
+    }
+
+    function gotFileWriter(writer) {
+    	writer.write(FACILITIES_DATA);
+        writer.onwriteend = function(evt) {
+            console.log("contents of file now " + FACILITIES_DATA);
+            ShowFacilities();
+        };
+    }
+
+    function writeFailed(error) {
+        console.log(error.code);
+    }
+
+	// Utilities //
+	Date.dateDiff = function(datepart, fromdate, todate) {
+		  datepart = datepart.toLowerCase();
+		  var diff = todate - fromdate;
+		  var divideBy = { w:604800000,
+		                   d:86400000,
+		                   h:3600000,
+		                   n:60000,
+		                   s:1000 };
+
+		  return Math.floor( diff/divideBy[datepart]);
+	}
+
+	function displayPropertyNames(thisObject) { // used to display object propery names
+		var names = '';
+		for(var name in thisObject) names += name + ": " + thisObject[name] + "\n";
+		return names;
+	}
+	////////////////////////////////
+
+
+	// HTML5 geolocation
+	if (navigator.geolocation) {
+		navigator.geolocation.getCurrentPosition(successFunction, errorFunction);
+	}
+
+	//Get the latitude and the longitude;
+	function successFunction(position) {
+		var lat = position.coords.latitude;
+		var lng = position.coords.longitude;
+		codeLatLng(lat, lng)
+	}
+
+	function errorFunction(){
+		console.log("Geocoder failed");
+	}
+
+	function initialize() { // called from google.maps.event.addDomListener
+		geocoder = new google.maps.Geocoder();
+	}
+
+	function codeLatLng(lat, lng) {
+		var str = "";
+
+		var latlng = new google.maps.LatLng(lat, lng);
+
+		geocoder.geocode({'latLng': latlng}, function(results, status) {
+			if (status == google.maps.GeocoderStatus.OK) {
+				console.log(results);
+				if (results[1]) {
+					//formatted address
+					str += results[0].formatted_address+'<br><br>';
+					//alert(results[0].formatted_address)
+					//find country name
+					for (var i=0; i<results[0].address_components.length; i++) {
+						for (var b=0;b<results[0].address_components[i].types.length;b++) {
+
+						//there are different types that might hold a city admin_area_lvl_1 usually does in come cases looking for sublocality type will be more appropriate
+						if (results[0].address_components[i].types[b] == "administrative_area_level_1") {
+							//this is the object you are looking for
+							city= results[0].address_components[i];
+							break;
+						}
+					}
+				}
+				//alert(city.short_name + " " + city.long_name)
+				var range = GeoLocation.buildLocationRange(lat, lng, 20);
+				var range2 = GeoLocation.buildLocationRange(lat, lng, 40);
+				document.getElementById("results").innerHTML = str + "<br><a href=\"https://maps.google.com?saddr=Current+Location&daddr=43.12345,-76.12345\">Map it</a> Range: minLat: "+ range.minLat + ", maxLat: " + range.maxLat + " minLon: "+ range.minLon.toFixed(2) + ", maxLon: " + range.maxLon.toFixed(2);
+
+				document.getElementById("results").innerHTML += "<BR><BR>" + str + "<br>Range: minLat: "+ range2.minLat.toFixed(2) + ", maxLat: " + range2.maxLat.toFixed(2) + " minLon: "+ range2.minLon.toFixed(2) + ", maxLon: " + range2.maxLon.toFixed(2);
+			} else {
+				console.log("No results found");
+			}
+			} else {
+				console.log("Geocoder failed due to: " + status);
+			}
+		});
+	}
+
+	function codeAddress() {
+		var address = document.getElementById('address').value;
+		geocoder.geocode( { 'address': address}, function(results, status) {
+			if (status == google.maps.GeocoderStatus.OK) {
+
+				codeLatLng(results[0].geometry.location.lat(), results[0].geometry.location.lng())
+
+			} else {
+				console.log('Geocode was not successful for the following reason: ' + status);
+			}
+		});
+	}
+
+
+	google.maps.event.addDomListener(window, 'load', initialize);
+
+
+</script>
+</head>
+
+<body>
+
+<input type="text" id="address" value="" /><input type="button" value="Test" onclick="codeAddress()">
+
+<div id="results"></div>
+<!--	<ul>
+		<li>
+			<label>Member ID</label>
+			<input id="zipcode" type="text" />
+			<input id="loadme" type="button" value="Get" onclick="GetFacilites()"/>
+		</li>
+	</ul>
+-->
+
+ </body>
+
+
+</html>
